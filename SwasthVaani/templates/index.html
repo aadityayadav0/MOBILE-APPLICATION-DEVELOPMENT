@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+
+<html lang="hi">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+content="width=device-width, initial-scale=1.0">
+
+<title>SwasthVaani</title>
+
+<link rel="stylesheet"
+href="/static/style.css">
+
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="header">
+
+        <div class="logo">🩺</div>
+
+        <h1>SwasthVaani</h1>
+
+        <p>Hindi Voice Health Screening</p>
+
+    </div>
+
+
+    <div class="card">
+
+        <h2>अपने Symptoms बताएं</h2>
+
+        <textarea
+        id="symptoms"
+        placeholder="उदाहरण: मुझे बुखार और खांसी है"></textarea>
+
+
+        <div class="buttons">
+
+            <button
+            class="voice"
+            onclick="startVoice()">
+            🎙️ बोलें
+            </button>
+
+
+            <button
+            onclick="analyzeSymptoms()">
+            🔎 Analyze
+            </button>
+
+
+            <button
+            onclick="speakResult()">
+            🔊 सुनें
+            </button>
+
+        </div>
+
+
+        <p id="status"></p>
+
+    </div>
+
+
+    <div
+    id="result"
+    class="card result hidden">
+    </div>
+
+
+    <div class="card">
+
+        <h2>📋 Recent History</h2>
+
+        <div id="history">
+        Loading...
+        </div>
+
+    </div>
+
+
+    <div class="warning">
+
+        ⚠️ SwasthVaani केवल educational
+        screening के लिए है। यह medical diagnosis
+        का replacement नहीं है।
+
+    </div>
+
+</div>
+
+
+<script>
+
+let lastResult = "";
+
+
+function startVoice() {
+
+    const SpeechRecognition =
+        window.SpeechRecognition ||
+        window.webkitSpeechRecognition;
+
+
+    if (!SpeechRecognition) {
+
+        alert(
+            "Voice recognition इस browser में available नहीं है। Chrome में try करें।"
+        );
+
+        return;
+    }
+
+
+    const recognition =
+        new SpeechRecognition();
+
+
+    recognition.lang = "hi-IN";
+
+    recognition.interimResults = false;
+
+
+    recognition.onstart = function() {
+
+        document.getElementById("status")
+        .innerText =
+        "🎙️ सुन रहा हूँ... बोलिए";
+
+    };
+
+
+    recognition.onresult = function(event) {
+
+        const text =
+            event.results[0][0].transcript;
+
+
+        document.getElementById("symptoms")
+        .value = text;
+
+
+        document.getElementById("status")
+        .innerText =
+        "✅ Voice input मिल गया";
+
+    };
+
+
+    recognition.onerror = function(event) {
+
+        document.getElementById("status")
+        .innerText =
+        "Voice error: " + event.error;
+
+    };
+
+
+    recognition.start();
+
+}
+
+
+async function analyzeSymptoms() {
+
+    const text =
+        document.getElementById("symptoms")
+        .value.trim();
+
+
+    if (!text) {
+
+        alert(
+            "पहले symptoms लिखें या बोलें।"
+        );
+
+        return;
+    }
+
+
+    const response =
+        await fetch(
+            "/analyze",
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type":
+                    "application/json"
+                },
+
+                body: JSON.stringify({
+                    symptoms: text
+                })
+            }
+        );
+
+
+    const data =
+        await response.json();
+
+
+    if (!response.ok) {
+
+        alert(data.error);
+
+        return;
+    }
+
+
+    lastResult =
+        data.guidance;
+
+
+    let colorClass = "";
+
+
+    if (data.urgency === "EMERGENCY") {
+
+        colorClass = "emergency";
+
+    } else if (
+        data.urgency === "DOCTOR SOON"
+    ) {
+
+        colorClass = "doctor";
+
+    } else {
+
+        colorClass = "monitor";
+    }
+
+
+    const result =
+        document.getElementById("result");
+
+
+    result.classList.remove("hidden");
+
+
+    result.innerHTML = `
+
+        <h2>📊 Screening Result</h2>
+
+        <p>
+        <b>Matched Symptoms:</b>
+        ${
+            data.matched.length
+            ? data.matched.join(", ")
+            : "None"
+        }
+        </p>
+
+        <div class="urgency ${colorClass}">
+            ${data.urgency}
+        </div>
+
+        <p>
+        ${data.guidance}
+        </p>
+
+        <hr>
+
+        <small>
+        यह diagnosis नहीं है।
+        जरूरत होने पर healthcare professional
+        से सलाह लें।
+        </small>
+
+    `;
+
+
+    loadHistory();
+
+}
+
+
+function speakResult() {
+
+    if (!lastResult) {
+
+        alert(
+            "पहले Analyze करें।"
+        );
+
+        return;
+    }
+
+
+    speechSynthesis.cancel();
+
+
+    const speech =
+        new SpeechSynthesisUtterance(
+            lastResult
+        );
+
+
+    speech.lang = "hi-IN";
+
+
+    speechSynthesis.speak(
+        speech
+    );
+
+}
+
+
+async function loadHistory() {
+
+    const response =
+        await fetch("/history");
+
+
+    const data =
+        await response.json();
+
+
+    const history =
+        document.getElementById(
+            "history"
+        );
+
+
+    if (!data.length) {
+
+        history.innerHTML =
+            "अभी कोई history नहीं है।";
+
+        return;
+    }
+
+
+    history.innerHTML =
+        data.map(item => `
+
+            <div class="history-item">
+
+                <b>
+                ${item.urgency}
+                </b>
+
+                <br>
+
+                ${item.symptoms}
+
+                <br>
+
+                <small>
+                ${item.time}
+                </small>
+
+            </div>
+
+        `).join("");
+
+}
+
+
+loadHistory();
+
+</script>
+
+</body>
+
+</html>
